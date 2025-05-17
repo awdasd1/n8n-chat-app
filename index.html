@@ -21,14 +21,6 @@
                 }
             }
         }
-
-        // Health check endpoint handler
-        if (window.location.pathname === '/health' || window.location.search.includes('health=check')) {
-            document.addEventListener('DOMContentLoaded', function() {
-                document.body.innerHTML = 'OK';
-                document.title = 'Health Check';
-            });
-        }
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -97,6 +89,11 @@
             width: 100%;
             height: 100%;
             cursor: pointer;
+        }
+        
+        /* Hidden iframe */
+        #response-frame {
+            display: none;
         }
     </style>
 </head>
@@ -178,23 +175,33 @@
                     </div>
                 </div>
                 
-                <div class="flex items-center space-x-2 rtl:space-x-reverse">
-                    <div class="file-input-wrapper">
-                        <button class="text-gray-500 hover:text-primary transition duration-300 focus:outline-none">
-                            <i class="fas fa-paperclip text-xl"></i>
+                <!-- Actual form for submitting -->
+                <form id="message-form" action="https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat" method="post" target="response-frame" enctype="multipart/form-data">
+                    <input type="hidden" id="form-username" name="username" value="">
+                    <textarea id="form-message" name="message" style="display:none;"></textarea>
+                    <input type="file" id="form-file" name="file" style="display:none;">
+                    
+                    <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                        <div class="file-input-wrapper">
+                            <button type="button" class="text-gray-500 hover:text-primary transition duration-300 focus:outline-none">
+                                <i class="fas fa-paperclip text-xl"></i>
+                            </button>
+                            <input type="file" id="file-input" accept="image/*,.pdf,.doc,.docx,.txt">
+                        </div>
+                        
+                        <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." class="flex-1 p-3 text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 dark:text-white">
+                        
+                        <button type="button" id="send-button" class="p-3 bg-primary hover:bg-primaryDark text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryDark transition duration-300">
+                            <i class="fas fa-paper-plane"></i>
                         </button>
-                        <input type="file" id="file-input" accept="image/*,.pdf,.doc,.docx,.txt">
                     </div>
-                    
-                    <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." class="flex-1 p-3 text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 dark:text-white">
-                    
-                    <button id="send-button" class="p-3 bg-primary hover:bg-primaryDark text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryDark transition duration-300">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </div>
+                </form>
             </div>
         </div>
     </div>
+    
+    <!-- Hidden iframe for form submission -->
+    <iframe id="response-frame" name="response-frame"></iframe>
 
     <script>
         // DOM Elements
@@ -211,28 +218,32 @@
         const imagePreview = document.getElementById('image-preview');
         const removeFileButton = document.getElementById('remove-file');
         const loadingIndicator = document.getElementById('loading-indicator');
-
-        // Webhook URL - try a more direct approach with CORS headers
-        // const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
         
-        // Fix: Use a better webhook URL format
-        const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
+        // Form elements
+        const messageForm = document.getElementById('message-form');
+        const formUsername = document.getElementById('form-username');
+        const formMessage = document.getElementById('form-message');
+        const formFile = document.getElementById('form-file');
+        const responseFrame = document.getElementById('response-frame');
         
         // Session variables (since localStorage is not available)
         let isAuthenticated = false;
         let username = '';
         let currentFile = null;
-        let messageAttempts = 0;
+        let waitingForResponse = false;
 
         // Event Listeners
         loginForm.addEventListener('submit', handleLogin);
         logoutButton.addEventListener('click', handleLogout);
-        sendButton.addEventListener('click', sendMessage);
+        sendButton.addEventListener('click', prepareMessageSubmission);
         messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+            if (e.key === 'Enter') prepareMessageSubmission();
         });
         fileInput.addEventListener('change', handleFileSelection);
         removeFileButton.addEventListener('click', removeFile);
+        
+        // Listen for iframe load event to get response
+        responseFrame.addEventListener('load', handleFormResponse);
 
         // Functions
         function handleLogin(e) {
@@ -243,10 +254,12 @@
             // Log credentials for debugging purposes
             console.log('Attempting login with:', usernameInput, password);
             
-            // ⚠️ Temporary solution for testing - allow any credentials
-            // Remove this and implement proper authentication in production
+            // Allow any credentials for now
             isAuthenticated = true;
             username = usernameInput;
+            
+            // Set username for the form
+            formUsername.value = username;
             
             // Switch to chat view if credentials are provided
             if (!usernameInput || !password) {
@@ -262,6 +275,7 @@
         function handleLogout() {
             isAuthenticated = false;
             username = '';
+            formUsername.value = '';
             
             // Clear chat
             messagesContainer.innerHTML = '<div class="bot-message message-bubble">مرحباً بك! كيف يمكنني مساعدتك اليوم؟</div>';
@@ -299,15 +313,41 @@
             filePreviewContainer.classList.add('hidden');
         }
 
-        // Main send function - attempts multiple methods
-        function sendMessage() {
+        function prepareMessageSubmission() {
             const message = messageInput.value.trim();
             
-            if (!message && !currentFile) return;
+            if ((!message && !currentFile) || waitingForResponse) return;
             
             // Add user message to chat
             if (message) {
                 addMessageToChat(message, 'user');
+            }
+            
+            // Set form data
+            formUsername.value = username || 'زائر';
+            formMessage.value = message;
+            
+            // Handle file if present
+            if (currentFile) {
+                // Create a new file input element
+                const newFile = document.createElement('input');
+                newFile.type = 'file';
+                newFile.name = 'file';
+                newFile.style.display = 'none';
+                
+                // Replace the existing file input with the new one
+                formFile.parentNode.replaceChild(newFile, formFile);
+                
+                // Set the file using the File object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(currentFile);
+                newFile.files = dataTransfer.files;
+                
+                // Update reference
+                formFile = newFile;
+                
+                // Show file message
+                addMessageToChat(`ملف: ${currentFile.name}`, 'user');
             }
             
             // Clear input
@@ -315,123 +355,57 @@
             
             // Show loading indicator
             loadingIndicator.classList.remove('hidden');
+            waitingForResponse = true;
             
-            // Reset message attempts counter
-            messageAttempts = 0;
+            // Submit the form
+            console.log('Submitting form with data:', {
+                username: formUsername.value,
+                message: formMessage.value,
+                file: currentFile ? currentFile.name : 'No file'
+            });
             
-            // Try sending with various methods
-            sendMessageWithMethod(message, 'formdata');
-        }
-        
-        // Try different methods to send the message
-        function sendMessageWithMethod(message, method) {
-            messageAttempts++;
-            console.log(`Attempt ${messageAttempts} using method: ${method}`);
+            messageForm.submit();
             
-            let requestOptions = {
-                method: 'POST',
-                mode: 'cors',
-                cache: 'no-cache',
-                credentials: 'same-origin',
-                redirect: 'follow',
-            };
-            
-            switch (method) {
-                case 'formdata':
-                    const formData = new FormData();
-                    formData.append('username', username || 'زائر');
-                    formData.append('message', message || '');
-                    
-                    if (currentFile) {
-                        formData.append('file', currentFile);
-                        if (messageAttempts === 1) { // Only show file message on first attempt
-                            addMessageToChat(`ملف: ${currentFile.name}`, 'user');
-                        }
-                    }
-                    
-                    requestOptions.body = formData;
-                    break;
-                    
-                case 'json':
-                    requestOptions.headers = {
-                        'Content-Type': 'application/json',
-                    };
-                    requestOptions.body = JSON.stringify({
-                        username: username || 'زائر',
-                        message: message || ''
-                    });
-                    break;
-                    
-                case 'urlencoded':
-                    const params = new URLSearchParams();
-                    params.append('username', username || 'زائر');
-                    params.append('message', message || '');
-                    
-                    requestOptions.headers = {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    };
-                    requestOptions.body = params;
-                    break;
-                    
-                case 'text':
-                    requestOptions.headers = {
-                        'Content-Type': 'text/plain',
-                    };
-                    requestOptions.body = `username=${username || 'زائر'}\nmessage=${message || ''}`;
-                    break;
-                    
-                default:
-                    requestOptions.body = formData;
+            // Clean up file
+            if (currentFile) {
+                removeFile();
             }
             
-            fetch(webhookUrl, requestOptions)
-                .then(response => {
-                    console.log(`Response for ${method}:`, response.status);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Server response: ${response.status}`);
-                    }
-                    
-                    return response.text();
-                })
-                .then(data => {
+            // Set a timeout in case the iframe doesn't load
+            setTimeout(() => {
+                if (waitingForResponse) {
+                    waitingForResponse = false;
                     loadingIndicator.classList.add('hidden');
-                    
-                    if (currentFile && method === 'formdata') {
-                        removeFile();
-                    }
-                    
-                    // Add response to chat
-                    if (data && data.trim()) {
-                        addMessageToChat(data, 'bot');
-                    } else {
-                        addMessageToChat('تم استلام الرسالة بنجاح', 'bot');
-                    }
-                })
-                .catch(error => {
-                    console.error(`Error with ${method}:`, error);
-                    
-                    // Try next method if available
-                    if (messageAttempts < 4) {
-                        const nextMethod = messageAttempts === 1 ? 'json' : 
-                                          messageAttempts === 2 ? 'urlencoded' : 'text';
-                        sendMessageWithMethod(message, nextMethod);
-                    } else {
-                        // All methods failed
-                        loadingIndicator.classList.add('hidden');
-                        if (currentFile) removeFile();
-                        
-                        // Final error message
-                        addMessageToChat('حدث خطأ أثناء الإرسال. الرجاء المحاولة مرة أخرى.', 'bot');
-                        
-                        // Add debugging tips
-                        console.log('Try these debugging steps:');
-                        console.log('1. Verify the webhook URL is correct');
-                        console.log('2. Check if the webhook server allows CORS requests');
-                        console.log('3. Examine network requests in DevTools for more details');
-                        console.log('4. Try sending a direct request to the webhook outside the application');
-                    }
-                });
+                    addMessageToChat('لم يتم استلام رد في الوقت المحدد. قد تكون هناك مشكلة اتصال.', 'bot');
+                }
+            }, 30000); // 30 second timeout
+        }
+        
+        function handleFormResponse() {
+            if (!waitingForResponse) return;
+            
+            waitingForResponse = false;
+            loadingIndicator.classList.add('hidden');
+            
+            console.log('Response received from iframe');
+            
+            try {
+                // Try to get the response content from the iframe
+                const frameDocument = responseFrame.contentDocument || responseFrame.contentWindow.document;
+                const responseText = frameDocument.body.textContent || frameDocument.body.innerHTML;
+                
+                console.log('Response content:', responseText);
+                
+                if (responseText && responseText.trim()) {
+                    addMessageToChat(responseText, 'bot');
+                } else {
+                    // No response content
+                    addMessageToChat('تم استلام الرسالة ولكن لم يتم إرجاع محتوى.', 'bot');
+                }
+            } catch (error) {
+                console.error('Error accessing iframe content:', error);
+                addMessageToChat('تم إرسال الرسالة ولكن لا يمكن قراءة الرد بسبب قيود الأمان.', 'bot');
+            }
         }
 
         function addMessageToChat(message, sender) {
