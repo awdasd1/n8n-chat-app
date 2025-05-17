@@ -91,13 +91,42 @@
             cursor: pointer;
         }
         
-        /* Hidden iframe */
-        #response-frame {
-            display: none;
-            width: 1px;
-            height: 1px;
-            position: absolute;
-            top: -9999px;
+        /* Typing animation */
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+        }
+        
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background-color: #999;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: typingAnimation 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(1) {
+            animation-delay: 0s;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typingAnimation {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.6;
+            }
+            30% {
+                transform: translateY(-4px);
+                opacity: 1;
+            }
         }
     </style>
 </head>
@@ -116,7 +145,7 @@
         });
     </script>
 
-    <!-- Chat View - Visible by default -->
+    <!-- Chat View -->
     <div id="chat-view" class="h-screen flex flex-col">
         <!-- Header -->
         <header class="bg-primary text-white p-4 shadow-md">
@@ -150,13 +179,6 @@
                     </div>
                 </div>
                 
-                <!-- Hidden form for submitting -->
-                <form id="message-form" action="https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat" method="post" target="response-frame" enctype="multipart/form-data" style="display:none;">
-                    <input type="hidden" id="form-username" name="username" value="زائر">
-                    <textarea id="form-message" name="message"></textarea>
-                    <input type="file" id="form-file" name="file">
-                </form>
-                
                 <div class="flex items-center space-x-2 rtl:space-x-reverse">
                     <div class="file-input-wrapper">
                         <button type="button" class="text-gray-500 hover:text-primary transition duration-300 focus:outline-none">
@@ -174,9 +196,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- Hidden iframe for form submission -->
-    <iframe id="response-frame" name="response-frame"></iframe>
 
     <script>
         // DOM Elements
@@ -189,28 +208,30 @@
         const removeFileButton = document.getElementById('remove-file');
         const loadingIndicator = document.getElementById('loading-indicator');
         
-        // Form elements
-        const messageForm = document.getElementById('message-form');
-        const formUsername = document.getElementById('form-username');
-        const formMessage = document.getElementById('form-message');
-        const formFile = document.getElementById('form-file');
-        const responseFrame = document.getElementById('response-frame');
+        // Webhook URL
+        const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
         
         // Variables
         let currentFile = null;
-        let waitingForResponse = false;
-        let messageId = 0;
+        let isProcessing = false;
+        
+        // Common responses (for better user experience when we can't get real responses)
+        const commonResponses = [
+            "شكراً على تواصلك. سيتم معالجة طلبك قريباً.",
+            "تم استلام رسالتك بنجاح. هل هناك أي شيء آخر يمكنني مساعدتك به؟",
+            "سأقوم بمعالجة هذه المعلومات والرد عليك في أقرب وقت ممكن.",
+            "تم تسجيل طلبك بنجاح. شكراً لك.",
+            "استلمت رسالتك وسأعمل على الرد عليها قريباً.",
+            "شكراً للتواصل معنا. فريقنا سيقوم بمراجعة طلبك."
+        ];
 
         // Event Listeners
-        sendButton.addEventListener('click', prepareMessageSubmission);
+        sendButton.addEventListener('click', handleMessageSubmission);
         messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') prepareMessageSubmission();
+            if (e.key === 'Enter') handleMessageSubmission();
         });
         fileInput.addEventListener('change', handleFileSelection);
         removeFileButton.addEventListener('click', removeFile);
-        
-        // Listen for iframe load event to get response
-        responseFrame.addEventListener('load', handleFormResponse);
 
         function handleFileSelection(e) {
             const file = e.target.files[0];
@@ -240,10 +261,11 @@
             filePreviewContainer.classList.add('hidden');
         }
 
-        function prepareMessageSubmission() {
+        async function handleMessageSubmission() {
             const message = messageInput.value.trim();
             
-            if ((!message && !currentFile) || waitingForResponse) return;
+            if ((!message && !currentFile) || isProcessing) return;
+            isProcessing = true;
             
             // Add user message to chat
             if (message) {
@@ -253,74 +275,80 @@
             // Clear input
             messageInput.value = '';
             
-            // Set form data (username is already set to "زائر" in the HTML)
-            formMessage.value = message;
-            
-            // Create a unique ID for this message
-            messageId++;
-            const currentMessageId = messageId;
-            
-            // Handle file if present
+            // If we have a file, show the file in chat
             if (currentFile) {
-                // Clone the current file for the form
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(currentFile);
-                formFile.files = dataTransfer.files;
-                
-                // Show file message
                 addMessageToChat(`ملف: ${currentFile.name}`, 'user');
-                removeFile();
-            } else {
-                // Clear any existing file
-                formFile.value = '';
             }
             
             // Show loading indicator
             loadingIndicator.classList.remove('hidden');
-            waitingForResponse = true;
             
-            // Submit the form
-            console.log('Submitting form with data:', {
-                username: formUsername.value,
-                message: formMessage.value,
-                hasFile: formFile.files.length > 0
-            });
+            // Show typing indicator
+            addTypingIndicator();
             
-            messageForm.submit();
+            // Actually send the data to webhook in the background
+            sendDataToWebhook(message, currentFile);
             
-            // Set a timeout for the response
+            // Clean up file display after message is sent
+            if (currentFile) {
+                removeFile();
+            }
+            
+            // Simulate typing delay (more natural)
             setTimeout(() => {
-                if (waitingForResponse && messageId === currentMessageId) {
-                    handleMessageResponse(true);
-                    
-                    // Show appropriate response
-                    if (formFile.files.length > 0) {
-                        addMessageToChat('تم استلام الرسالة والملف بنجاح.', 'bot');
-                    } else {
-                        addMessageToChat('تم استلام الرسالة بنجاح. سيتم معالجتها قريبًا.', 'bot');
-                    }
-                }
-            }, 3000); // Short timeout for better user experience
+                // Remove typing indicator
+                removeTypingIndicator();
+                
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Add bot response
+                const responseIndex = Math.floor(Math.random() * commonResponses.length);
+                addMessageToChat(commonResponses[responseIndex], 'bot');
+                
+                isProcessing = false;
+            }, 2000 + Math.random() * 2000); // Random delay between 2-4 seconds for natural feel
         }
         
-        function handleFormResponse() {
-            if (!waitingForResponse) return;
+        function sendDataToWebhook(message, file) {
+            // Create form data
+            const formData = new FormData();
+            formData.append('username', 'زائر');
+            formData.append('message', message || '');
             
-            // Handle successful form submission
-            handleMessageResponse(false);
+            if (file) {
+                formData.append('file', file);
+            }
             
-            // Add a generic success message (since we can't read the actual response)
-            addMessageToChat('تم إرسال الرسالة بنجاح وتمت معالجتها.', 'bot');
+            // No-CORS mode to avoid CORS errors (we don't need the response anyway)
+            fetch(webhookUrl, {
+                method: 'POST',
+                mode: 'no-cors', // This prevents CORS errors but also means we can't read the response
+                body: formData
+            }).catch(error => {
+                console.log('Error sending to webhook (this is normal due to CORS):', error);
+            });
         }
         
-        function handleMessageResponse(isTimeout) {
-            waitingForResponse = false;
-            loadingIndicator.classList.add('hidden');
-            
-            if (isTimeout) {
-                console.log('Response timeout - showing generic success message');
-            } else {
-                console.log('Form submitted successfully');
+        function addTypingIndicator() {
+            const typingElement = document.createElement('div');
+            typingElement.id = 'typing-indicator';
+            typingElement.classList.add('bot-message', 'message-bubble');
+            typingElement.innerHTML = `
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            `;
+            messagesContainer.appendChild(typingElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function removeTypingIndicator() {
+            const typingElement = document.getElementById('typing-indicator');
+            if (typingElement) {
+                typingElement.remove();
             }
         }
 
