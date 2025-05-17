@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                        primaryDark: '#4A49B8',
+                        secondary: '#F3F4F6',
+                        secondaryDark: '#374151',
+                        background: '#FFFFFF',
+                        backgroundDark: '#181818',
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap');
+        
+        * {
+            font-family: 'Tajawal', sans-serif;
+        }
+        
+        .message-bubble {
+            position: relative;
+            border-radius: 1rem;
+            max-width: 80%;
+            margin-bottom: 0.5rem;
+            padding: 0.75rem 1rem;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            background-color: #5D5CDE;
+            color: white;
+            border-top-left-radius: 1rem;
+            border-top-right-radius: 1rem;
+            border-bottom-right-radius: 0;
+            margin-left: auto;
+        }
+        
+        .bot-message {
+            background-color: #F3F4F6;
+            color: #1F2937;
+            border-top-left-radius: 1rem;
+            border-top-right-radius: 1rem;
+            border-bottom-left-radius: 0;
+            margin-right: auto;
+        }
+        
+        .dark .bot-message {
+            background-color: #374151;
+            color: #F9FAFB;
+        }
+        
+        .progress-bar {
+            height: 3px;
+            background-color: #5D5CDE;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { width: 0%; }
+            50% { width: 50%; }
+            100% { width: 100%; }
+        }
+        
+        /* Custom file input styling */
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-background dark:bg-backgroundDark text-gray-900 dark:text-gray-100 min-h-screen">
+    <!-- Check for dark mode -->
+    <script>
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+    </script>
+
+    <!-- Login View -->
+    <div id="login-view" class="flex justify-center items-center h-screen px-4">
+        <div class="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+            <div class="flex justify-center mb-6">
+                <div class="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
+                    <i class="fas fa-comments text-white text-3xl"></i>
+                </div>
+            </div>
+            <h2 class="text-2xl font-bold text-center mb-6 text-gray-800 dark:text-white">تسجيل الدخول</h2>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="username" class="block text-gray-700 dark:text-gray-300 mb-1">اسم المستخدم</label>
+                    <input type="text" id="username" name="username" class="w-full px-4 py-2 text-base border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary" required>
+                </div>
+                <div>
+                    <label for="password" class="block text-gray-700 dark:text-gray-300 mb-1">كلمة المرور</label>
+                    <input type="password" id="password" name="password" class="w-full px-4 py-2 text-base border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary" required>
+                </div>
+                <div id="login-error" class="text-red-500 hidden"></div>
+                <button type="submit" class="w-full py-2 px-4 bg-primary hover:bg-primaryDark text-white font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-primaryDark focus:ring-opacity-75 transition duration-300">
+                    دخول
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Chat View - Hidden by default -->
+    <div id="chat-view" class="h-screen flex flex-col hidden">
+        <!-- Header -->
+        <header class="bg-primary text-white p-4 shadow-md">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold">الدردشة المساعدة</h1>
+                <button id="logout-button" class="px-3 py-1 bg-white bg-opacity-20 rounded-md hover:bg-opacity-30 transition duration-300">
+                    <i class="fas fa-sign-out-alt"></i> خروج
+                </button>
+            </div>
+        </header>
+
+        <!-- Chat Messages Area -->
+        <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 dark:bg-gray-900">
+            <div class="bot-message message-bubble">
+                مرحباً بك! كيف يمكنني مساعدتك اليوم؟
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="hidden">
+            <div class="progress-bar"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+            <div class="flex flex-col">
+                <!-- Preview for uploaded files/images -->
+                <div id="file-preview-container" class="mb-2 hidden">
+                    <div class="relative inline-block">
+                        <img id="image-preview" class="max-h-32 rounded-lg border border-gray-300" src="" alt="">
+                        <button id="remove-file" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                            <i class="fas fa-times text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                    <div class="file-input-wrapper">
+                        <button class="text-gray-500 hover:text-primary transition duration-300 focus:outline-none">
+                            <i class="fas fa-paperclip text-xl"></i>
+                        </button>
+                        <input type="file" id="file-input" accept="image/*,.pdf,.doc,.docx,.txt">
+                    </div>
+                    
+                    <input type="text" id="message-input" placeholder="اكتب رسالتك هنا..." class="flex-1 p-3 text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 dark:text-white">
+                    
+                    <button id="send-button" class="p-3 bg-primary hover:bg-primaryDark text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryDark transition duration-300">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const loginView = document.getElementById('login-view');
+        const chatView = document.getElementById('chat-view');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const logoutButton = document.getElementById('logout-button');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const fileInput = document.getElementById('file-input');
+        const filePreviewContainer = document.getElementById('file-preview-container');
+        const imagePreview = document.getElementById('image-preview');
+        const removeFileButton = document.getElementById('remove-file');
+        const loadingIndicator = document.getElementById('loading-indicator');
+
+        // Webhook URL from environment variables
+        const webhookUrl = '{{APP_WEBHOOK_URL}}' || 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
+        
+        // Session variables (since localStorage is not available)
+        let isAuthenticated = false;
+        let username = '';
+        let currentFile = null;
+
+        // Event Listeners
+        loginForm.addEventListener('submit', handleLogin);
+        logoutButton.addEventListener('click', handleLogout);
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        fileInput.addEventListener('change', handleFileSelection);
+        removeFileButton.addEventListener('click', removeFile);
+
+        // Functions
+        function handleLogin(e) {
+            e.preventDefault();
+            const usernameInput = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            // Get credentials from environment variables (set by Coolify)
+            const validUsername = '{{APP_USERNAME}}';
+            const validPassword = '{{APP_PASSWORD}}';
+            
+            // Validate against environment variables
+            if (usernameInput === validUsername && password === validPassword) {
+                isAuthenticated = true;
+                username = usernameInput;
+                
+                // Switch to chat view
+                loginView.classList.add('hidden');
+                chatView.classList.remove('hidden');
+            } else if (!usernameInput || !password) {
+                loginError.textContent = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
+                loginError.classList.remove('hidden');
+            } else {
+                loginError.textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة';
+                loginError.classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            isAuthenticated = false;
+            username = '';
+            
+            // Clear chat
+            messagesContainer.innerHTML = '<div class="bot-message message-bubble">مرحباً بك! كيف يمكنني مساعدتك اليوم؟</div>';
+            
+            // Switch back to login view
+            chatView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+        }
+
+        function handleFileSelection(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            currentFile = file;
+            
+            // Show preview if it's an image
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    filePreviewContainer.classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
+            } else {
+                // For non-image files, show file name
+                imagePreview.src = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/icons/file-earmark.svg';
+                imagePreview.alt = file.name;
+                filePreviewContainer.classList.remove('hidden');
+            }
+        }
+
+        function removeFile() {
+            currentFile = null;
+            fileInput.value = '';
+            filePreviewContainer.classList.add('hidden');
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            
+            if (!message && !currentFile) return;
+            
+            // Add user message to chat
+            if (message) {
+                addMessageToChat(message, 'user');
+            }
+            
+            // Clear input
+            messageInput.value = '';
+            
+            // Show loading indicator
+            loadingIndicator.classList.remove('hidden');
+            
+            // Prepare form data with the message and file if any
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('message', message);
+            
+            if (currentFile) {
+                formData.append('file', currentFile);
+                // Add file message to chat
+                addMessageToChat(`ملف: ${currentFile.name}`, 'user');
+                removeFile();
+            }
+            
+            // Send to webhook
+            fetch(webhookUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text();
+            })
+            .then(data => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Add bot response to chat
+                addMessageToChat(data, 'bot');
+            })
+            .catch(error => {
+                // Hide loading indicator
+                loadingIndicator.classList.add('hidden');
+                
+                // Show error message
+                addMessageToChat('حدث خطأ أثناء الإرسال. الرجاء المحاولة مرة أخرى.', 'bot');
+                console.error('Error:', error);
+            });
+        }
+
+        function addMessageToChat(message, sender) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message-bubble');
+            messageElement.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+            
+            // Handle links in messages
+            if (sender === 'bot') {
+                const linkRegex = /(https?:\/\/[^\s]+)/g;
+                message = message.replace(linkRegex, url => `<a href="${url}" target="_blank" class="text-blue-500 underline">${url}</a>`);
+            }
+            
+            messageElement.innerHTML = message;
+            messagesContainer.appendChild(messageElement);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
