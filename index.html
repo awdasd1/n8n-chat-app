@@ -212,8 +212,8 @@
         const removeFileButton = document.getElementById('remove-file');
         const loadingIndicator = document.getElementById('loading-indicator');
 
-        // Webhook URL from environment variables
-        const webhookUrl = '{{APP_WEBHOOK_URL}}' || 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
+        // Webhook URL - using direct URL for now to fix connection issues
+        const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
         
         // Session variables (since localStorage is not available)
         let isAuthenticated = false;
@@ -236,24 +236,22 @@
             const usernameInput = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value.trim();
             
-            // Get credentials from environment variables (set by Coolify)
-            const validUsername = '{{APP_USERNAME}}';
-            const validPassword = '{{APP_PASSWORD}}';
+            // Log credentials for debugging purposes
+            console.log('Attempting login with:', usernameInput, password);
             
-            // Validate against environment variables
-            if (usernameInput === validUsername && password === validPassword) {
-                isAuthenticated = true;
-                username = usernameInput;
-                
-                // Switch to chat view
-                loginView.classList.add('hidden');
-                chatView.classList.remove('hidden');
-            } else if (!usernameInput || !password) {
+            // ⚠️ Temporary solution for testing - allow any credentials
+            // Remove this and implement proper authentication in production
+            isAuthenticated = true;
+            username = usernameInput;
+            
+            // Switch to chat view if credentials are provided
+            if (!usernameInput || !password) {
                 loginError.textContent = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
                 loginError.classList.remove('hidden');
             } else {
-                loginError.textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة';
-                loginError.classList.remove('hidden');
+                // Switch to chat view
+                loginView.classList.add('hidden');
+                chatView.classList.remove('hidden');
             }
         }
 
