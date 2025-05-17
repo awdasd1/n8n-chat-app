@@ -212,13 +212,17 @@
         const removeFileButton = document.getElementById('remove-file');
         const loadingIndicator = document.getElementById('loading-indicator');
 
-        // Webhook URL - using direct URL for now to fix connection issues
+        // Webhook URL - try a more direct approach with CORS headers
+        // const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
+        
+        // Fix: Use a better webhook URL format
         const webhookUrl = 'https://n.letall.me/webhook/76fc404d-862f-441e-80ed-0ac0446f9d67/chat';
         
         // Session variables (since localStorage is not available)
         let isAuthenticated = false;
         let username = '';
         let currentFile = null;
+        let messageAttempts = 0;
 
         // Event Listeners
         loginForm.addEventListener('submit', handleLogin);
@@ -295,6 +299,7 @@
             filePreviewContainer.classList.add('hidden');
         }
 
+        // Main send function - attempts multiple methods
         function sendMessage() {
             const message = messageInput.value.trim();
             
@@ -311,44 +316,122 @@
             // Show loading indicator
             loadingIndicator.classList.remove('hidden');
             
-            // Prepare form data with the message and file if any
-            const formData = new FormData();
-            formData.append('username', username);
-            formData.append('message', message);
+            // Reset message attempts counter
+            messageAttempts = 0;
             
-            if (currentFile) {
-                formData.append('file', currentFile);
-                // Add file message to chat
-                addMessageToChat(`ملف: ${currentFile.name}`, 'user');
-                removeFile();
+            // Try sending with various methods
+            sendMessageWithMethod(message, 'formdata');
+        }
+        
+        // Try different methods to send the message
+        function sendMessageWithMethod(message, method) {
+            messageAttempts++;
+            console.log(`Attempt ${messageAttempts} using method: ${method}`);
+            
+            let requestOptions = {
+                method: 'POST',
+                mode: 'cors',
+                cache: 'no-cache',
+                credentials: 'same-origin',
+                redirect: 'follow',
+            };
+            
+            switch (method) {
+                case 'formdata':
+                    const formData = new FormData();
+                    formData.append('username', username || 'زائر');
+                    formData.append('message', message || '');
+                    
+                    if (currentFile) {
+                        formData.append('file', currentFile);
+                        if (messageAttempts === 1) { // Only show file message on first attempt
+                            addMessageToChat(`ملف: ${currentFile.name}`, 'user');
+                        }
+                    }
+                    
+                    requestOptions.body = formData;
+                    break;
+                    
+                case 'json':
+                    requestOptions.headers = {
+                        'Content-Type': 'application/json',
+                    };
+                    requestOptions.body = JSON.stringify({
+                        username: username || 'زائر',
+                        message: message || ''
+                    });
+                    break;
+                    
+                case 'urlencoded':
+                    const params = new URLSearchParams();
+                    params.append('username', username || 'زائر');
+                    params.append('message', message || '');
+                    
+                    requestOptions.headers = {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    };
+                    requestOptions.body = params;
+                    break;
+                    
+                case 'text':
+                    requestOptions.headers = {
+                        'Content-Type': 'text/plain',
+                    };
+                    requestOptions.body = `username=${username || 'زائر'}\nmessage=${message || ''}`;
+                    break;
+                    
+                default:
+                    requestOptions.body = formData;
             }
             
-            // Send to webhook
-            fetch(webhookUrl, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.text();
-            })
-            .then(data => {
-                // Hide loading indicator
-                loadingIndicator.classList.add('hidden');
-                
-                // Add bot response to chat
-                addMessageToChat(data, 'bot');
-            })
-            .catch(error => {
-                // Hide loading indicator
-                loadingIndicator.classList.add('hidden');
-                
-                // Show error message
-                addMessageToChat('حدث خطأ أثناء الإرسال. الرجاء المحاولة مرة أخرى.', 'bot');
-                console.error('Error:', error);
-            });
+            fetch(webhookUrl, requestOptions)
+                .then(response => {
+                    console.log(`Response for ${method}:`, response.status);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server response: ${response.status}`);
+                    }
+                    
+                    return response.text();
+                })
+                .then(data => {
+                    loadingIndicator.classList.add('hidden');
+                    
+                    if (currentFile && method === 'formdata') {
+                        removeFile();
+                    }
+                    
+                    // Add response to chat
+                    if (data && data.trim()) {
+                        addMessageToChat(data, 'bot');
+                    } else {
+                        addMessageToChat('تم استلام الرسالة بنجاح', 'bot');
+                    }
+                })
+                .catch(error => {
+                    console.error(`Error with ${method}:`, error);
+                    
+                    // Try next method if available
+                    if (messageAttempts < 4) {
+                        const nextMethod = messageAttempts === 1 ? 'json' : 
+                                          messageAttempts === 2 ? 'urlencoded' : 'text';
+                        sendMessageWithMethod(message, nextMethod);
+                    } else {
+                        // All methods failed
+                        loadingIndicator.classList.add('hidden');
+                        if (currentFile) removeFile();
+                        
+                        // Final error message
+                        addMessageToChat('حدث خطأ أثناء الإرسال. الرجاء المحاولة مرة أخرى.', 'bot');
+                        
+                        // Add debugging tips
+                        console.log('Try these debugging steps:');
+                        console.log('1. Verify the webhook URL is correct');
+                        console.log('2. Check if the webhook server allows CORS requests');
+                        console.log('3. Examine network requests in DevTools for more details');
+                        console.log('4. Try sending a direct request to the webhook outside the application');
+                    }
+                });
         }
 
         function addMessageToChat(message, sender) {
