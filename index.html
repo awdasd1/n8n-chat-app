@@ -21,6 +21,14 @@
                 }
             }
         }
+
+        // Health check endpoint handler
+        if (window.location.pathname === '/health' || window.location.search.includes('health=check')) {
+            document.addEventListener('DOMContentLoaded', function() {
+                document.body.innerHTML = 'OK';
+                document.title = 'Health Check';
+            });
+        }
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
